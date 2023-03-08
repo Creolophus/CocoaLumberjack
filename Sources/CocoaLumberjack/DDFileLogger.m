@@ -18,6 +18,7 @@
 #endif
 
 #import <sys/xattr.h>
+//#import <SSZipArchive/SSZipArchive.h>
 
 #import "DDFileLogger+Internal.h"
 
@@ -45,7 +46,8 @@ BOOL doesAppRunInBackground(void);
 
 unsigned long long const kDDDefaultLogMaxFileSize      = 1024 * 1024;      // 1 MB
 NSTimeInterval     const kDDDefaultLogRollingFrequency = 60 * 60 * 24;     // 24 Hours
-NSUInteger         const kDDDefaultLogMaxNumLogFiles   = 5;                // 5 Files
+NSUInteger         const kDDDefaultLogMaxNumLogFiles    = 5;                // 5 Files
+NSUInteger         const kDDDefaultLogMaxNumLogZipFiles = 1;                // 1 Files
 unsigned long long const kDDDefaultLogFilesDiskQuota   = 20 * 1024 * 1024; // 20 MB
 
 NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
@@ -57,6 +59,7 @@ NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
 @interface DDLogFileManagerDefault () {
     NSDateFormatter *_fileDateFormatter;
     NSUInteger _maximumNumberOfLogFiles;
+    NSUInteger _maximumNumberOfLogZipFiles;
     unsigned long long _logFilesDiskQuota;
     NSString *_logsDirectory;
 #if TARGET_OS_IPHONE
@@ -79,6 +82,7 @@ NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
     if ((self = [super init])) {
         _maximumNumberOfLogFiles = kDDDefaultLogMaxNumLogFiles;
         _logFilesDiskQuota = kDDDefaultLogFilesDiskQuota;
+        _maximumNumberOfLogZipFiles = kDDDefaultLogMaxNumLogZipFiles;
 
         _fileDateFormatter = [[NSDateFormatter alloc] init];
         [_fileDateFormatter setLocale:[NSLocale localeWithLocaleIdentifier:@"en_US_POSIX"]];
@@ -115,11 +119,22 @@ NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
 }
 #endif
 
+/// 删除就文件当配置发生改变时候
 - (void)deleteOldFilesForConfigurationChange {
     dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
         @autoreleasepool {
             // See method header for queue reasoning.
             [self deleteOldLogFiles];
+        }
+    });
+}
+
+/// 删除就文件当配置发生改变时候
+- (void) deleteOldZipFilesForConfigurationChange {
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        @autoreleasepool {
+            // See method header for queue reasoning.
+            [self deleteOldLogZipFiles];
         }
     });
 }
@@ -138,6 +153,22 @@ NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
         NSLogInfo(@"DDFileLogManagerDefault: Responding to configuration change: maximumNumberOfLogFiles");
         [self deleteOldFilesForConfigurationChange];
     }
+}
+
+- (void)setMaximumNumberOfLogZipFiles:(NSUInteger)maximumNumberOfLogZipFiles {
+    if (_maximumNumberOfLogZipFiles != maximumNumberOfLogZipFiles) {
+        if (maximumNumberOfLogZipFiles < 1) {
+            _maximumNumberOfLogZipFiles = 1;
+        } else {
+            _maximumNumberOfLogZipFiles = MIN(maximumNumberOfLogZipFiles, 5);
+        }
+        NSLogInfo(@"DDFileLogManagerDefault: Responding to configuration change: maximumNumberOfLogZipFiles");
+        [self deleteOldZipFilesForConfigurationChange];
+    }
+}
+
+- (NSUInteger)maximumNumberOfLogZipFiles {
+    return _maximumNumberOfLogZipFiles;
 }
 
 #if TARGET_OS_IPHONE
@@ -214,7 +245,16 @@ NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
 
         for (NSUInteger i = firstIndexToDelete; i < sortedLogFileInfos.count; i++) {
             DDLogFileInfo *logFileInfo = sortedLogFileInfos[i];
-
+            if (!logFileInfo.fileName || ![[NSFileManager defaultManager] fileExistsAtPath:logFileInfo.filePath]) {
+                continue;
+            }
+            // 创建 zip 压缩文件, 保存旧的日志文件
+            if ([self respondsToSelector:@selector(createOldLogZipFilesWith:fileName:)]) {
+                BOOL success = [self createOldLogZipFilesWith:logFileInfo.filePath fileName:logFileInfo.fileName];
+                if (success) { // 删除旧的zip文件, 根据 _maximumNumberOfLogZipFiles 值
+                    [self deleteOldLogZipFiles];
+                }
+            }
             __autoreleasing NSError *error = nil;
             BOOL success = [[NSFileManager defaultManager] removeItemAtPath:logFileInfo.filePath error:&error];
             if (success) {
@@ -225,6 +265,64 @@ NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
         }
     }
 }
+
+/// 删除旧的 zip 压缩 文件
+- (void) deleteOldLogZipFiles {
+    NSString *directory = self->_logsDirectory;
+    if (![[NSFileManager defaultManager] fileExistsAtPath:directory] ) {
+        return;
+    }
+    NSError *error = nil;
+    NSArray *contents = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:directory error:&error];
+    if (error != NULL) {
+        return;
+    }
+    NSPredicate *predicate = [NSPredicate predicateWithFormat:@"SELF CONTAINS [cd] '.zip'"];
+    NSArray <NSString *> *zipFiles = [contents filteredArrayUsingPredicate:predicate];
+    if (zipFiles.count <= _maximumNumberOfLogZipFiles) {
+        return;
+    }
+    NSMutableDictionary *zipFilesMap = [NSMutableDictionary dictionary];
+    for (NSInteger idx = 0; idx < zipFiles.count; idx++) {
+        NSString *fileName = [zipFiles objectAtIndex:idx];
+        NSString *filePath = [directory stringByAppendingPathComponent:fileName];
+        NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:filePath error:nil];
+        NSDate *createDate = attributes[@"NSFileCreationDate"];
+        [zipFilesMap setObject:filePath forKey:[NSString stringWithFormat:@"%f", createDate.timeIntervalSince1970]];
+    }
+    NSArray *keyArray = [[zipFilesMap allKeys] sortedArrayUsingComparator:^NSComparisonResult(id  _Nonnull obj1, id  _Nonnull obj2) {
+        return [obj2 compare:obj1];
+    }];
+    for (NSUInteger idx = _maximumNumberOfLogZipFiles; idx < keyArray.count; idx++) {
+        NSString *key = [keyArray objectAtIndex:idx];
+        NSString *filePath = [zipFilesMap objectForKey:key];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:filePath]) {
+            [[NSFileManager defaultManager] removeItemAtPath:filePath error:&error];
+        } else {
+            continue;
+        }
+    }
+}
+
+/// 创建 zip 压缩文件
+///// - Parameters:
+/////   - filePath: 文件路径
+/////   - fileName: 文件名称
+//- (BOOL) createOldLogZipFilesWith:(NSString *)filePath fileName:(NSString *)fileName {
+//    //  获取当前的目录
+//    NSRange range = [filePath rangeOfString:fileName];
+//    if (range.location == NSNotFound) { return NO; }
+//    NSString *directory = [filePath substringToIndex:range.location];
+//    NSString *logZipFileName = [NSString stringWithFormat:@"%@%@.zip", directory,fileName];
+//    BOOL success = [SSZipArchive createZipFileAtPath:logZipFileName withFilesAtPaths:@[filePath]];
+//    if (success) {
+//        NSLogInfo(@"压缩 log 文件成功");
+//        return YES;
+//    } else {
+//        NSLogInfo(@"压缩 log 文件失败");
+//        return NO;
+//    }
+//}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #pragma mark Log Files
@@ -503,6 +601,10 @@ NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
     } while (YES);
 }
 
+- (BOOL)createOldLogZipFilesWith:(nonnull NSString *)filePath fileName:(nonnull NSString *)fileName {
+    return NO;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 #pragma mark Utility
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -525,6 +627,7 @@ NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
 
     return _appName;
 }
+
 
 @end
 
