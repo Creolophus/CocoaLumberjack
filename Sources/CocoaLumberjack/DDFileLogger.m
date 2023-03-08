@@ -157,8 +157,8 @@ NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
 
 - (void)setMaximumNumberOfLogZipFiles:(NSUInteger)maximumNumberOfLogZipFiles {
     if (_maximumNumberOfLogZipFiles != maximumNumberOfLogZipFiles) {
-        if maximumNumberOfLogZipFiles < 1 {
-            _maximumNumberOfLogZipFiles = 1
+        if (maximumNumberOfLogZipFiles < 1) {
+            _maximumNumberOfLogZipFiles = 1;
         } else {
             _maximumNumberOfLogZipFiles = MIN(maximumNumberOfLogZipFiles, 5);
         }
