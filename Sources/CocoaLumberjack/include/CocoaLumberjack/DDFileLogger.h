@@ -141,6 +141,9 @@ extern unsigned long long const kDDDefaultLogFilesDiskQuota;
  **/
 @property (nonatomic, readonly, strong) NSArray<DDLogFileInfo *> *sortedLogFileInfos;
 
+/// 最多允许保存几个 zip 文件. min = 1 , max = 5
+@property (nonatomic, readwrite, assign) NSUInteger maximumNumberOfLogZipFiles;
+
 // Private methods (only to be used by DDFileLogger)
 
 /**
@@ -149,6 +152,13 @@ extern unsigned long long const kDDDefaultLogFilesDiskQuota;
  * The file has to exist by the time the method returns.
  **/
 - (nullable NSString *)createNewLogFileWithError:(NSError **)error;
+
+
+/// 创建 zip 压缩文件, 子类需要重写该方法
+/// - Parameters:
+///   - filePath: 文件路径
+///   - fileName: 文件名称
+- (BOOL) createOldLogZipFilesWith:(NSString *)filePath fileName:(NSString *)fileName;
 
 @optional
 
