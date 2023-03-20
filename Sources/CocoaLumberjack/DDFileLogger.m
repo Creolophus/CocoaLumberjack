@@ -160,7 +160,7 @@ NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
         if (maximumNumberOfLogZipFiles < 1) {
             _maximumNumberOfLogZipFiles = 1;
         } else {
-            _maximumNumberOfLogZipFiles = MIN(maximumNumberOfLogZipFiles, 5);
+            _maximumNumberOfLogZipFiles = MIN(maximumNumberOfLogZipFiles, 100);
         }
         NSLogInfo(@"DDFileLogManagerDefault: Responding to configuration change: maximumNumberOfLogZipFiles");
         [self deleteOldZipFilesForConfigurationChange];

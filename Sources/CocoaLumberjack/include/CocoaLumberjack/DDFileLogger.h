@@ -141,7 +141,7 @@ extern unsigned long long const kDDDefaultLogFilesDiskQuota;
  **/
 @property (nonatomic, readonly, strong) NSArray<DDLogFileInfo *> *sortedLogFileInfos;
 
-/// 最多允许保存几个 zip 文件. min = 1 , max = 5
+/// 最多允许保存几个 zip 文件. min = 1 , max = 100
 @property (nonatomic, readwrite, assign) NSUInteger maximumNumberOfLogZipFiles;
 
 // Private methods (only to be used by DDFileLogger)
