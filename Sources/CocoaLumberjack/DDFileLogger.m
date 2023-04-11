@@ -269,38 +269,49 @@ NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
 /// 删除旧的 zip 压缩 文件
 - (void) deleteOldLogZipFiles {
     NSString *directory = self->_logsDirectory;
-    if (![[NSFileManager defaultManager] fileExistsAtPath:directory] ) {
-        return;
-    }
+    if (![[NSFileManager defaultManager] fileExistsAtPath:directory] ) { return; }
     NSError *error = nil;
     NSArray *contents = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:directory error:&error];
-    if (error != NULL) {
-        return;
-    }
+    if (error != NULL) { return; }
     NSPredicate *predicate = [NSPredicate predicateWithFormat:@"SELF CONTAINS [cd] '.zip'"];
     NSArray <NSString *> *zipFiles = [contents filteredArrayUsingPredicate:predicate];
-    if (zipFiles.count <= _maximumNumberOfLogZipFiles) {
-        return;
-    }
-    NSMutableDictionary *zipFilesMap = [NSMutableDictionary dictionary];
-    for (NSInteger idx = 0; idx < zipFiles.count; idx++) {
-        NSString *fileName = [zipFiles objectAtIndex:idx];
-        NSString *filePath = [directory stringByAppendingPathComponent:fileName];
-        NSDictionary *attributes = [[NSFileManager defaultManager] attributesOfItemAtPath:filePath error:nil];
-        NSDate *createDate = attributes[@"NSFileCreationDate"];
-        [zipFilesMap setObject:filePath forKey:[NSString stringWithFormat:@"%f", createDate.timeIntervalSince1970]];
-    }
-    NSArray *keyArray = [[zipFilesMap allKeys] sortedArrayUsingComparator:^NSComparisonResult(id  _Nonnull obj1, id  _Nonnull obj2) {
-        return [obj2 compare:obj1];
-    }];
-    for (NSUInteger idx = _maximumNumberOfLogZipFiles; idx < keyArray.count; idx++) {
-        NSString *key = [keyArray objectAtIndex:idx];
-        NSString *filePath = [zipFilesMap objectForKey:key];
-        if ([[NSFileManager defaultManager] fileExistsAtPath:filePath]) {
-            [[NSFileManager defaultManager] removeItemAtPath:filePath error:&error];
-        } else {
-            continue;
+    if (zipFiles.count == 0 || zipFiles.count <= _maximumNumberOfLogZipFiles) { return; }
+    // 对文件创建日期进行排序
+    zipFiles = [zipFiles sortedArrayUsingComparator:^NSComparisonResult(NSString *fileName1, NSString *fileName2) {
+        NSString *filePath1 = [directory stringByAppendingPathComponent:fileName1];
+        NSString *filePath2 = [directory stringByAppendingPathComponent:fileName2];
+        if (![[NSFileManager defaultManager] fileExistsAtPath:filePath1] || ![[NSFileManager defaultManager] fileExistsAtPath:filePath2]) {
+            return NSOrderedSame;
         }
+        
+        NSDictionary *attributes1 = [[NSFileManager defaultManager] attributesOfItemAtPath:filePath1 error:nil];
+        NSDictionary *attributes2 = [[NSFileManager defaultManager] attributesOfItemAtPath:filePath2 error:nil];
+        if (![attributes1 isKindOfClass:[NSDictionary class]] || ![attributes2 isKindOfClass:[NSDictionary class]]) {
+            return NSOrderedSame;
+        }
+        
+        NSDate *createDate1 = [attributes1 objectForKey:@"NSFileCreationDate"];
+        NSDate *createDate2 = [attributes2 objectForKey:@"NSFileCreationDate"];
+        if ((createDate1 && [createDate1 isKindOfClass:[NSDate class]]) && (createDate2 && [createDate2 isKindOfClass:[NSDate class]])) {
+            return [createDate2 compare:createDate1];
+        } else {
+            return NSOrderedSame;
+        }
+    }];
+    @try { // 移除创建时间较早的文件
+        NSUInteger location = _maximumNumberOfLogZipFiles;
+        NSUInteger length = zipFiles.count - _maximumNumberOfLogZipFiles;
+        NSArray *deleteKeys = [zipFiles subarrayWithRange:NSMakeRange(location, length)];
+        for (NSString *fileName in deleteKeys) {
+            NSString *filePath = [directory stringByAppendingPathComponent:fileName];
+            if ([[NSFileManager defaultManager] fileExistsAtPath:filePath]) {
+                [[NSFileManager defaultManager] removeItemAtPath:filePath error:&error];
+            } else {
+                continue;
+            }
+        }
+    } @catch (NSException *exception) {
+        NSLog(@"deleteOldLogZipFiles exception => %@",exception.reason);
     }
 }
 
