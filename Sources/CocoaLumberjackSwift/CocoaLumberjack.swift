@@ -23,9 +23,9 @@ extension DDLogFlag {
         DDLogFlag(rawValue: logLevel.rawValue)
     }
 
-	public init(_ logLevel: DDLogLevel) {
+    public init(_ logLevel: DDLogLevel) {
         self = DDLogFlag(rawValue: logLevel.rawValue)
-	}
+    }
 
     /// Returns the log level, or the lowest equivalent.
     public func toLogLevel() -> DDLogLevel {
