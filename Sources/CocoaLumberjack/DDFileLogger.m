@@ -273,30 +273,12 @@ NSTimeInterval     const kDDRollingLeeway              = 1.0;              // 1s
     NSError *error = nil;
     NSArray *contents = [[NSFileManager defaultManager] contentsOfDirectoryAtPath:directory error:&error];
     if (error != NULL) { return; }
-    NSPredicate *predicate = [NSPredicate predicateWithFormat:@"SELF CONTAINS [cd] '.zip'"];
+    NSPredicate *predicate = [NSPredicate predicateWithFormat:@"SELF CONTAINS [cd] '.log.zip'"];
     NSArray <NSString *> *zipFiles = [contents filteredArrayUsingPredicate:predicate];
     if (zipFiles.count == 0 || zipFiles.count <= _maximumNumberOfLogZipFiles) { return; }
     // 对文件创建日期进行排序
     zipFiles = [zipFiles sortedArrayUsingComparator:^NSComparisonResult(NSString *fileName1, NSString *fileName2) {
-        NSString *filePath1 = [directory stringByAppendingPathComponent:fileName1];
-        NSString *filePath2 = [directory stringByAppendingPathComponent:fileName2];
-        if (![[NSFileManager defaultManager] fileExistsAtPath:filePath1] || ![[NSFileManager defaultManager] fileExistsAtPath:filePath2]) {
-            return NSOrderedSame;
-        }
-        
-        NSDictionary *attributes1 = [[NSFileManager defaultManager] attributesOfItemAtPath:filePath1 error:nil];
-        NSDictionary *attributes2 = [[NSFileManager defaultManager] attributesOfItemAtPath:filePath2 error:nil];
-        if (![attributes1 isKindOfClass:[NSDictionary class]] || ![attributes2 isKindOfClass:[NSDictionary class]]) {
-            return NSOrderedSame;
-        }
-        
-        NSDate *createDate1 = [attributes1 objectForKey:@"NSFileCreationDate"];
-        NSDate *createDate2 = [attributes2 objectForKey:@"NSFileCreationDate"];
-        if ((createDate1 && [createDate1 isKindOfClass:[NSDate class]]) && (createDate2 && [createDate2 isKindOfClass:[NSDate class]])) {
-            return [createDate2 compare:createDate1];
-        } else {
-            return NSOrderedSame;
-        }
+        return [fileName2 compare:fileName1];
     }];
     @try { // 移除创建时间较早的文件
         NSUInteger location = _maximumNumberOfLogZipFiles;
@@ -1920,7 +1902,7 @@ static NSString *_xattrToExtensionName(NSString *attrName) {
  * want (even if device is locked). Thats why that attribute have to be changed to
  * NSFileProtectionCompleteUntilFirstUserAuthentication.
  */
-BOOL doesAppRunInBackground() {
+BOOL doesAppRunInBackground(void) {
     BOOL answer = NO;
 
     NSArray *backgroundModes = [[NSBundle mainBundle] objectForInfoDictionaryKey:@"UIBackgroundModes"];
